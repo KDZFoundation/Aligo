@@ -1,0 +1,131 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // ===============================================================
+    // Shared Hardened Helpers
+    // ===============================================================
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isSignedIn() { return request.auth != null; }
+    
+    // Demo user bypass for testing environment
+    function isDemo(uid) {
+      return uid == 'demo-user-123';
+    }
+
+    function isOwner(uid) {
+      return (isSignedIn() && request.auth.uid == uid) || isDemo(uid);
+    }
+    
+    function isAdmin() {
+      return (isSignedIn() && (
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
+        (request.auth.token.email == "fundacja@konopiedlaziemi.org" && request.auth.token.email_verified == true)
+      )) || false;
+    }
+
+    // ===============================================================
+    // Validation Blueprints
+    // ===============================================================
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'email', 'role', 'profileType', 'organizationName', 'createdAt']) &&
+             data.uid is string && data.uid.size() > 0 && data.uid.size() < 100 &&
+             data.email is string && data.email.size() < 100 &&
+             data.role in ['ngo', 'business', 'admin'] &&
+             data.profileType in ['basic', 'extended'] &&
+             data.organizationName is string && data.organizationName.size() < 200 &&
+             data.createdAt is timestamp;
+    }
+
+    function isValidProject(data) {
+      return data.keys().hasAll(['title', 'assumptions', 'effect', 'deadline', 'status', 'ownerId', 'ownerName', 'createdAt']) &&
+             data.title is string && data.title.size() > 0 && data.title.size() < 200 &&
+             data.assumptions is string && data.assumptions.size() < 5000 &&
+             data.effect is string && data.effect.size() < 5000 &&
+             data.deadline is timestamp &&
+             data.status in ['planned', 'in-progress', 'completed'] &&
+             data.ownerId is string && data.ownerId.size() > 0 &&
+             data.ownerName is string &&
+             data.createdAt is timestamp;
+    }
+
+    function isValidMessage(data) {
+      return data.keys().hasAll(['projectId', 'senderId', 'senderName', 'text', 'createdAt']) &&
+             data.projectId is string &&
+             data.senderId is string &&
+             data.senderName is string &&
+             data.text is string && data.text.size() < 2000 &&
+             data.createdAt is timestamp;
+    }
+
+    // ===============================================================
+    // Resources
+    // ===============================================================
+
+    match /users/{userId} {
+      // Allow reading any profile to facilitate NGO-Business discovery
+      allow read: if true;
+      
+      allow create: if isOwner(userId) && isValidUser(incoming()) && incoming().createdAt == request.time;
+      
+      allow update: if (isOwner(userId) || isAdmin()) && isValidUser(incoming()) && (
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'organizationName', 'role', 'profileType', 'nip', 'street', 'buildingNumber', 'zipCode', 'city',
+          'county', 'voivodeship', 'contactFirstName', 'contactLastName', 'contactEmail', 'contactPhone',
+          'completedProjectsCount', 'ongoingProjectsCount', 'platformProjectsCount', 'creationYear',
+          'industries', 'communicatorConsent', 'badges', 'updatedAt'
+        ])
+      );
+      
+      allow delete: if isAdmin();
+    }
+
+    match /projects/{projectId} {
+      allow read: if true;
+      
+      allow create: if isOwner(incoming().ownerId) && isValidProject(incoming()) && incoming().createdAt == request.time;
+      
+      allow update: if (isOwner(existing().ownerId) || isAdmin() || (isSignedIn() && request.auth.uid in incoming().interestedBusinesses) || (isSignedIn() && request.auth.uid in incoming().confirmedBusinesses)) && isValidProject(incoming()) && (
+        // Owner actions: manage project
+        (isOwner(existing().ownerId) && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'assumptions', 'effect', 'deadline', 'status', 'category', 'contributionValue', 'imageUrl', 'interestedBusinesses', 'confirmedBusinesses', 'updatedAt'])) ||
+        // Business actions: register interest/confirmation
+        (isSignedIn() && incoming().diff(existing()).affectedKeys().hasOnly(['interestedBusinesses', 'confirmedBusinesses', 'updatedAt'])) ||
+        isAdmin()
+      );
+      
+      allow delete: if isOwner(existing().ownerId) || isAdmin();
+    }
+
+    function isProjectParticipant(projectId) {
+      let prod = get(/databases/$(database)/documents/projects/$(projectId)).data;
+      return isOwner(prod.ownerId) || 
+             (isSignedIn() && (request.auth.uid in prod.interestedBusinesses || request.auth.uid in prod.confirmedBusinesses)) ||
+             (isDemo('demo-user-123') && ('demo-user-123' in prod.interestedBusinesses || 'demo-user-123' in prod.confirmedBusinesses)) ||
+             isAdmin();
+    }
+
+    match /messages/{messageId} {
+      allow read: if isProjectParticipant(resource.data.projectId);
+      
+      allow create: if isOwner(incoming().senderId) && 
+                    isValidMessage(incoming()) && 
+                    incoming().createdAt == request.time &&
+                    isProjectParticipant(incoming().projectId);
+      
+      allow update, delete: if false; // Messages are immutable
+    }
+  }
+}

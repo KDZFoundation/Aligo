@@ -1,0 +1,85 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Represents an NGO or Business registered on the platform.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth UID" },
+        "email": { "type": "string", "format": "email" },
+        "role": { "type": "string", "enum": ["ngo", "business", "admin"] },
+        "profileType": { "type": "string", "enum": ["basic", "extended"] },
+        "nip": { "type": "string" },
+        "organizationName": { "type": "string" },
+        "street": { "type": "string" },
+        "buildingNumber": { "type": "string" },
+        "zipCode": { "type": "string" },
+        "city": { "type": "string" },
+        "county": { "type": "string" },
+        "voivodeship": { "type": "string" },
+        "contactFirstName": { "type": "string" },
+        "contactLastName": { "type": "string" },
+        "contactEmail": { "type": "string", "format": "email" },
+        "contactPhone": { "type": "string" },
+        "completedProjectsCount": { "type": "number" },
+        "ongoingProjectsCount": { "type": "number" },
+        "platformProjectsCount": { "type": "number" },
+        "creationYear": { "type": "number" },
+        "industries": { "type": "array", "items": { "type": "string" } },
+        "communicatorConsent": { "type": "boolean" },
+        "badges": { "type": "array", "items": { "type": "string" } },
+        "createdAt": { "type": "timestamp" }
+      },
+      "required": ["uid", "email", "role", "profileType", "nip", "organizationName", "createdAt"]
+    },
+    "Project": {
+      "title": "Project",
+      "description": "A social project created by an NGO.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "assumptions": { "type": "string" },
+        "effect": { "type": "string" },
+        "deadline": { "type": "timestamp" },
+        "status": { "type": "string", "enum": ["planned", "in-progress", "completed"] },
+        "category": { "type": "string" },
+        "contributionValue": { "type": "number" },
+        "imageUrl": { "type": "string" },
+        "ownerName": { "type": "string" },
+        "ownerId": { "type": "string", "$ref": "User" },
+        "interestedBusinesses": { "type": "array", "items": { "type": "string" } },
+        "confirmedBusinesses": { "type": "array", "items": { "type": "string" } },
+        "createdAt": { "type": "timestamp" },
+        "updatedAt": { "type": "timestamp" }
+      },
+      "required": ["title", "assumptions", "effect", "deadline", "status", "ownerId", "ownerName", "createdAt"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "Chat message between project participants.",
+      "type": "object",
+      "properties": {
+        "projectId": { "type": "string" },
+        "senderId": { "type": "string" },
+        "senderName": { "type": "string" },
+        "text": { "type": "string" },
+        "createdAt": { "type": "timestamp" }
+      },
+      "required": ["projectId", "senderId", "senderName", "text", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Collection of all registered users (NGOs and Businesses)."
+    },
+    "/projects/{projectId}": {
+      "schema": "Project",
+      "description": "Collection of all social projects."
+    },
+    "/messages/{messageId}": {
+      "schema": "Message",
+      "description": "All chat messages."
+    }
+  }
+}

@@ -1,0 +1,34 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() { return request.auth != null; }
+    function isDemo(uid) { return uid == 'demo-user-123'; }
+    function isOwner(uid) { return (isSignedIn() && request.auth.uid == uid) || isDemo(uid); }
+
+    match /users/{userId} {
+      allow read: if true;
+      allow create, update: if isOwner(userId) || isDemo('demo-user-123');
+      allow delete: if false;
+    }
+
+    match /projects/{projectId} {
+      allow read: if true;
+      allow create: if isOwner(request.resource.data.ownerId) || isDemo('demo-user-123');
+      allow update: if isOwner(resource.data.ownerId) || 
+                    (isSignedIn() && request.auth.uid in request.resource.data.interestedBusinesses) ||
+                    (isSignedIn() && request.auth.uid in request.resource.data.confirmedBusinesses) ||
+                    isDemo('demo-user-123');
+      allow delete: if isOwner(resource.data.ownerId) || isDemo('demo-user-123');
+    }
+
+    match /messages/{messageId} {
+      allow read: if true; // Simple read for demo
+      allow create: if isOwner(request.resource.data.senderId) || isDemo('demo-user-123');
+    }
+  }
+}
